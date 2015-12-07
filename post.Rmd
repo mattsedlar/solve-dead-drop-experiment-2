@@ -244,7 +244,7 @@ game.results <- game.results %>% mutate(randompredicted = (drop == random))
 
 Let's revisit these questions:
 
-**What is the probability of success to approximate the drop (with equal probabilities)?**
+**What is the probability of success to approximate the drop (in cases of equal probabilities)?**
 
 Out of 500 games, using probability only correctly pointed towards potential candidates for the drop `r table(game.results$predicted)[2]` times. That means only `r (table(game.results$predicted)[2]/500) * 100`% of the time you'll be able to narrow down the drop card in the first round.  
 
@@ -456,7 +456,7 @@ ggplot(game.results2) + geom_bar(aes(factor(drop),..count../500)) +
 
 Let's revisit these questions for the last time (promise!):
 
-**What is the probability of success to approximate the drop (with equal probabilities)?**
+**What is the probability of success to approximate the drop (in cases of equal probabilities)?**
 
 Out of 500 simulations of a two-player game, using probability only correctly pointed towards potential candidates for the drop `r table(game.results2$predicted)[2]` times. That means in a two-player game, only `r (table(game.results2$predicted)[2]/500) * 100`% of the time you'll be able to narrow down the drop card in the first round.  
 
