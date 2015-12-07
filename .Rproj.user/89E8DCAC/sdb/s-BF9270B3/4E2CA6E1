@@ -1,0 +1,25 @@
+{
+    "contents" : "",
+    "created" : 1449095414553.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "4E2CA6E1",
+    "lastKnownWriteTime" : 30056360,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "cacheKey" : "334gdqv54z",
+        "caption" : "chi.square.df",
+        "contentUrl" : "grid_resource/gridviewer.html?env=&obj=chi.square.df&cache_key=334gdqv54z",
+        "displayedObservations" : 4,
+        "environment" : "",
+        "object" : "chi.square.df",
+        "totalObservations" : 4,
+        "variables" : 1
+    },
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "type" : "r_dataframe"
+}

@@ -1,0 +1,504 @@
+---
+title: "More About Dead Drop"
+author: "Matthew Sedlar"
+date: "December 2, 2015"
+output: html_document
+---
+
+If you haven't read "Can You Solve Dead Drop in the First Round?" I looked at the card game Dead Drop and ran some simulations to determine if it's possible to use conditional probability to successfully determine the drop card, as the article title suggests, in the first round. It was long and full of math. I figured, how can I top that?
+
+First, here's a quick refresher of my last post. 
+
+* I simulated 100 games of Dead Drop in order to determine if you could approximate or successfully guess the drop card in the first round using conditional probability.
+* I also tested the method of picking a random number to successfully guess the drop.
+* I found that 57% of the time you could approximate which card is the drop (when cards have equal probabilities), but it was equally likely to successfully guess the card with conditional probability as it was by picking a random number.
+
+What I want to explore in this post is:
+
+* Did the outcomes during my 100 simulations match mathematical expectations?
+* Was my sample size big enough to make those conclusions?
+* Is it really equally likely to successfully guess a card using conditional probability as it is to pick a random number? That's crazy.
+* How does the setup for a two-player game change all of this?
+
+This post dives into the weeds of hypothesis testing, which is not for the faint of heart, so if you'd rather just read my conclusions, click here.
+
+### Great Expectations
+
+First, I wanted to look at the number of times certain cards were the drop during my simulations and see if the outcomes matched their mathematical expectations.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+data <- read.csv("data/100-game-results.csv")
+
+library(ggplot2)
+
+data$deaddrop <- factor(data$deaddrop)
+
+ggplot(data) + 
+  geom_bar(aes(deaddrop,..count../100)) +
+  xlab("Cards") +
+  ylab("Percentage of Outcomes in Decimals") +
+  ggtitle("'Drop' Outcomes from 100 Simulations (3 Players)") +
+  theme(plot.title=element_text(size=15, face="bold",vjust=2))
+
+```
+
+It should look more like this:
+
+```{r echo=FALSE}
+
+ggplot(data=data.frame(prob=c(4/13,3/13,2/13,2/13,1/13,1/13),
+                       name=factor(c(0,1,2,3,4,5)))) +
+  geom_bar(aes(name,prob), stat="identity") +
+  xlab("Cards") +
+  ylab("Percentage of Expected Outcomes in Decimals") +
+  ggtitle("Mathematical Expectations of 'Drop' Outcomes") +
+  theme(plot.title=element_text(size=15, face="bold",vjust=2))
+
+```
+
+So maybe my sample size was too small. 
+
+What if I were to run 500 simulations?
+
+```{r echo=FALSE, message=FALSE}
+
+# function to remove draws from the deck
+remove.values <- function(x,y) {
+  indices <- c()
+    for(i in 1:length(x)) {
+      index <- grep(x[i],y)
+      if(index[1] %in% indices) {
+        if(index[2] %in% indices) {
+          if(index[3] %in% indices){
+            if(index[4] %in% indices){
+              indices <- c(index[5],indices)
+            } else { indices <- c(index[4],indices) }
+          } else { indices <- c(index[3],indices) }
+        } else { indices <- c(index[2],indices) }
+      } else { indices <- c(index[1],indices) }
+    } 
+  print(indices)
+}
+
+# function to simulate the game
+simulate.game <- function(x) {
+  
+  # warning if x does not meet specific parameters  
+  if(x == 1 | x > 4) { 
+    stop("x must be a number between 2 and 4") 
+  }
+
+  deck <- c(rep(0,4),rep(1,3),rep(2,2),rep(3,2),4,5)
+
+  # the stash
+  stash <- sample(deck,x,replace = F)
+  deck <- deck[-remove.values(stash,deck)]
+
+  # the drop
+  drop <- sample(deck,1,replace = F)
+  deck <- deck[-remove.values(drop,deck)]
+  
+  # remaining cards in deck
+  r <- length(deck)
+  
+  # player1's hand
+  player1 <- sample(deck,floor(r/x),replace = F)
+  deck <- deck[-remove.values(player1,deck)]
+  
+  # player2's hand
+  player2 <- sample(deck,floor(r/x),replace = F)
+  deck <- deck[-remove.values(player2,deck)]
+  
+  # player 3's hand
+  if(length(deck) > 0) {
+    player3 <- sample(deck,floor(r/x),replace = F)
+    deck <- deck[-remove.values(player3,deck)]
+  } else { player3 <- NA }
+  
+  # player 4's hand
+  if(length(deck) > 0){
+    player4 <- sample(deck,floor(r/x),replace = F)
+    deck <- deck[-remove.values(player4,deck)]
+  } else { player4 <- NA }
+  
+  # function outcome is a list of all results
+  list(player1 = player1, player2 = player2, player3 = player3, player4 = player4,
+       stash = stash, drop = drop)
+}
+
+```
+
+```{r echo=FALSE}
+
+# full Dead Drop deck
+full.deck <- c(rep(0,4),rep(1,3),rep(2,2),rep(3,2),4,5)
+
+calculate.probs <- function(l,x) {
+  # information available to the player
+  available <- c(l$player1, l$stash)
+  # the number we want to run prob on 
+  number <- table(grepl(x,available))[2]
+  if(is.na(number)) { number <- 0 }
+  # how many are normally in the deck
+  normal <- table(full.deck)[x+1]
+  pA <- normal/13
+  if(is.na(l$player3)) {
+    pBA <- choose(normal-1,number)/choose(12,7)
+    pB <- choose(normal,number)/choose(13,7)
+  } else {
+    pBA <- choose(normal-1,number)/choose(12,6)
+    pB <- choose(normal,number)/choose(13,6)
+  }
+  bayes.theorem(pA,pBA,pB)
+}
+
+bayes.theorem <- function(x,y,z) { round(((x*y)/z)*100,2) }
+
+game.results <- data.frame(prob0=c(0),
+                           prob1=c(0),
+                           prob2=c(0),
+                           prob3=c(0),
+                           prob4=c(0),
+                           prob5=c(0),
+                           drop=c(0))
+
+```
+
+```{r echo=FALSE, warning=FALSE, include=FALSE, cache=TRUE}
+
+# set.seed for reproducing my simulations
+set.seed(50)
+# this runs the simulate game function 500 times and stores the results in an object
+simulations <- replicate(500,simulate.game(3))
+
+# now I'm going to loop through the results and bind them to my data frame
+x <- 1
+while(x <= 500){
+  game.results <- rbind(game.results,
+                        c(calculate.probs(simulations[,x],0),
+                          calculate.probs(simulations[,x],1),
+                          calculate.probs(simulations[,x],2),
+                          calculate.probs(simulations[,x],3),
+                          calculate.probs(simulations[,x],4),
+                          calculate.probs(simulations[,x],5),
+                          simulations[,x]$drop))
+  x <- x + 1
+}
+
+```
+
+
+```{r echo=FALSE}
+game.results <- game.results[-1,]
+rownames(game.results) <- 1:nrow(game.results)
+ggplot(game.results) + geom_bar(aes(factor(drop),..count../500)) +
+  xlab("Cards") +
+  ylab("Percentage of Outcomes in Decimals") +
+  ggtitle("'Drop' Outcomes from 500 Simulations (3 Players)") +
+  theme(plot.title=element_text(size=15, face="bold",vjust=2))
+
+```
+
+That looks about right. It's still a little different from the mathematical expectations (the outcomes of 2 and 3 are uneven despite being equally likely), but it follows the Law of Large Numbers. Knowing this, how do these new findings affect the results of my experiments in the last post?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# Looking at whether dead drop is included in predictions
+
+game.results$predictor <- apply(game.results,1,function(x) which(x==max(x)))
+
+deaddrop.predicted <- function(x,y) {
+  (y + 1) %in% x[[1]]
+}
+
+deaddrop.true <- function(x,y) {
+  if(length(x) > 1) { 
+   FALSE
+  } else if(x[1]==y+1) {
+    TRUE
+  } else { FALSE }
+}
+
+predicted <- c()
+true <- c()
+
+for(i in 1:length(game.results$predictor)) {
+  predicted <- c(predicted,deaddrop.predicted(game.results$predictor[i],game.results$drop[i]))
+  true <- c(true, deaddrop.true(game.results$predictor[[i]],game.results$drop[i]))
+}
+
+game.results$predicted <- predicted
+game.results$trueprediction <- true
+
+# Is a random number better at predicting the dead drop?
+
+set.seed(100)
+game.results$random <- sample(full.deck,500, replace=T)
+
+library(dplyr)
+
+game.results <- game.results %>% mutate(randompredicted = (drop == random))
+
+```
+
+Let's revisit these questions:
+
+**What is the probability of success to approximate the drop (with equal probabilities)?**
+
+Out of 500 games, using probability only correctly pointed towards potential candidates for the drop `r table(game.results$predicted)[2]` times. That means only `r (table(game.results$predicted)[2]/500) * 100`% of the time you'll be able to narrow down the drop card in the first round.  
+
+**What is the probability of success for guessing the drop correctly?**
+
+Out of 500 games, using probability only successfully guessed the drop `r table(game.results$trueprediction)[2]` times. That means only `r (table(game.results$trueprediction)[2]/500) * 100`% of the time you'll be able to guess the drop card in the first round. 
+
+**Finally, what is the probability of success using the method of picking a random number to successfully guess the dead drop?**
+
+Out of 500 games, using the method of picking a random number successfully guessed the drop `r table(game.results$randompredicted)[2]` times, or `r (table(game.results$randompredicted)[2]/500) * 100`% of the time. In the last post, I found that picking a random number and successfully guessing was equally likely to using probability to successfully guess.
+
+Let's look at the new findings in a good ol' two-way cross-classification table.
+
+```{r echo=FALSE}
+
+simulation.outcome <- matrix(c(table(game.results$trueprediction),table(game.results$randompredicted)),ncol=2,byrow = T)
+colnames(simulation.outcome) <- c("Failed","Succeeded")
+rownames(simulation.outcome) <- c("Probability Prediction","Random Prediction")
+
+library(knitr)
+kable(simulation.outcome, caption="Success of Methods in Predicting the Drop")
+
+```
+
+### Hypothesis Testing
+
+Now for some statistics! Say we want to test if the proportion of successes in my simulation is associated with the method of using probability for prediction. In other words, is there a significant difference between using one method over another? In order to test a hypothesis, I need a null hypothesis -- the opposite of what I'm trying to prove. In statistics, a null hypothesis is represented by $H_0$ and the alternative, my hypothesis, is represented by $H_1$.
+
+$H_0$: There is no difference between the proportions.
+
+$H_1$: My hunch is right. There is a difference. 
+
+Let's say I want to have 95% confidence that I'm right.  
+
+Now that we have our hypotheses, how do we actual test them? In statistics you use what is called the Chi-Square Test. It's pretty simple and it looks like this: 
+
+$$\sum \frac{(observed - expected)^2}{expected}$$
+
+That big E-looking thing (Sigma in Greek) just means you sum up everything that comes after it. "Observed" is each number in the table above, and "expected" is calculated by multiplying the sums of the row and column for each observation and dividing it by the number you get when you add up every number in the table. This results in what is called a test statistic.
+
+```{r echo=FALSE}
+
+# our observed values
+chi.square.df <- data.frame(observed=c(384,399,116,101)) 
+
+# calculated the expected values
+chi.square.df$expected <- c((384+116)*(384+399)/1000,
+                            (399+101)*(384+399)/1000,
+                            (384+116)*(116+101)/1000,
+                            (399+101)*(116+101)/1000)
+
+require(dplyr)
+chi.square.df <- chi.square.df %>%
+  # observed - expected
+  mutate(`|O-E|` = observed-expected) %>%
+  # observed - expected squared
+  mutate(`|O-E|^2` = `|O-E|`^2) %>%
+  # observed - expected squared/ expected
+  mutate(`|O-E|^2/E` = `|O-E|^2`/expected)
+
+# the test statistic
+test.statistic <- sum(chi.square.df$`|O-E|^2/E`)
+
+# degrees of freedom
+df <- (2-1)*(2-1)
+
+```
+
+If you want to look at a complicated process in R for calculating a test statistic, check out my GitHub repository for this post. There is an easy way of doing it, but I like doing the things the hard way. For now, all you have to know is our test statistic is `r test.statistic`. 
+
+Now let's consult a [Chi-Square Distribution Table](http://sites.stat.psu.edu/~mga/401/tables/Chi-square-table.pdf). We have to compare our test statistic to a table value that matches our degrees of freedom and $\alpha$ level of 0.05.
+
+* **Degrees of freedom**: Remember the two-way table up there. We get our degrees of freedom using the following formula: (number of rows - 1) * (number of columns - 1). Our degrees of freedom is `r df`.
+* **$\alpha$ level**: What the heck is an $\alpha$ (alpha) level and why is 0.05 important? I said I wanted 95% confidence. The table value is going to be a number like my test statistic. If my test statistic is larger than that number, then I can be confident that I'm right and the null hypothesis gets rejected. However, if it's smaller, then I'm wrong: the proportions are equal. So 0.05 is the probability level (think of it as 5%). If my test statistic is greater than the table value, that means the probability of my hypothesis occurring by chance is less than 5%. 
+
+Looking at the table, it appears the value is 3.841, which is larger than my test statistic. It looks like I'm wrong. I can calculate what's called a p-value. Here I'm looking for a value smaller than 0.05 to see if there is any statistical signifance. But alas, I already know the answer...
+
+```{r}
+
+1-pchisq(test.statistic,df=df)
+
+```
+
+So even with a larger sample size, my original findings appear to be correct. It's equally likely to guess the drop using a random number as it is guessing with the card with the highest probability.
+
+### But What About a Two-Player Game?
+
+Does a two-player game change the results of my experiment? In both the three-player and four-player versions, each player starts the game knowing the identities of six cards. But in the two-player version, each player holds a hand of five cards and the stash contains two cards.
+
+I rewrote the simulate.game() function in R to take number of players as an argument.
+
+```{r eval=FALSE}
+# function to simulate the game
+simulate.game <- function(x) {
+  
+  # warning if x does not meet specific parameters  
+  if(x == 1 | x > 4) { 
+    stop("x must be a number between 2 and 4") 
+  }
+
+  deck <- c(rep(0,4),rep(1,3),rep(2,2),rep(3,2),4,5)
+
+  # the stash
+  stash <- sample(deck,x,replace = F)
+  deck <- deck[-remove.values(stash,deck)]
+
+  # the drop
+  drop <- sample(deck,1,replace = F)
+  deck <- deck[-remove.values(drop,deck)]
+  
+  # remaining cards in deck
+  r <- length(deck)
+  
+  # player1's hand
+  player1 <- sample(deck,floor(r/x),replace = F)
+  deck <- deck[-remove.values(player1,deck)]
+  
+  # player2's hand
+  player2 <- sample(deck,floor(r/x),replace = F)
+  deck <- deck[-remove.values(player2,deck)]
+  
+  # player 3's hand
+  if(length(deck) > 0) {
+    player3 <- sample(deck,floor(r/x),replace = F)
+    deck <- deck[-remove.values(player3,deck)]
+  } else { player3 <- NA }
+  
+  # player 4's hand
+  if(length(deck) > 0){
+    player4 <- sample(deck,floor(r/x),replace = F)
+    deck <- deck[-remove.values(player4,deck)]
+  } else { player4 <- NA }
+  
+  # function outcome is a list of all results
+  list(player1 = player1, player2 = player2, player3 = player3, player4 = player4,
+       stash = stash, drop = drop)
+}
+
+```
+
+```{r echo=FALSE, warning=FALSE, include=FALSE, cache=TRUE}
+
+# set.seed for reproducing my simulations
+set.seed(50)
+# this runs the simulate game function 500 times and stores the results in an object
+simulations2 <- replicate(500,simulate.game(2))
+
+game.results2 <- data.frame(prob0=c(0),
+                           prob1=c(0),
+                           prob2=c(0),
+                           prob3=c(0),
+                           prob4=c(0),
+                           prob5=c(0),
+                           drop=c(0))
+
+# now I'm going to loop through the results and bind them to my data frame
+x <- 1
+while(x <= 500){
+  game.results2 <- rbind(game.results2,
+                        c(calculate.probs(simulations2[,x],0),
+                          calculate.probs(simulations2[,x],1),
+                          calculate.probs(simulations2[,x],2),
+                          calculate.probs(simulations2[,x],3),
+                          calculate.probs(simulations2[,x],4),
+                          calculate.probs(simulations2[,x],5),
+                          simulations2[,x]$drop))
+  x <- x + 1
+}
+
+game.results2 <- game.results2[-1,]
+rownames(game.results2) <- 1:nrow(game.results2)
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+game.results2$predictor <- apply(game.results2,1,function(x) which(x==max(x)))
+
+predicted <- c()
+true <- c()
+
+for(i in 1:length(game.results2$predictor)) {
+  predicted <- c(predicted,deaddrop.predicted(game.results2$predictor[i],game.results2$drop[i]))
+  true <- c(true, deaddrop.true(game.results2$predictor[[i]],game.results2$drop[i]))
+}
+
+game.results2$predicted <- predicted
+game.results2$trueprediction <- true
+
+# Is a random number better at predicting the dead drop?
+
+set.seed(100)
+game.results2$random <- sample(full.deck,500, replace=T)
+
+game.results2 <- game.results2 %>% mutate(randompredicted = (drop == random))
+
+```
+
+Here are the outcomes for 500 simulations of a two-player game. Again, not perfectly matching the mathematical expectations, but close.
+
+```{r echo=FALSE}
+
+ggplot(game.results2) + geom_bar(aes(factor(drop),..count../500)) +
+  xlab("Cards") +
+  ylab("Percentage of Outcomes in Decimals") +
+  ggtitle("'Drop' Outcomes from 500 Simulations (2 Players)") +
+  theme(plot.title=element_text(size=15, face="bold",vjust=2))
+
+```
+
+Let's revisit these questions for the last time (promise!):
+
+**What is the probability of success to approximate the drop (with equal probabilities)?**
+
+Out of 500 simulations of a two-player game, using probability only correctly pointed towards potential candidates for the drop `r table(game.results2$predicted)[2]` times. That means in a two-player game, only `r (table(game.results2$predicted)[2]/500) * 100`% of the time you'll be able to narrow down the drop card in the first round.  
+
+**What is the probability of success for guessing the drop correctly?**
+
+Out of 500 games, using probability only successfully guessed the drop `r table(game.results2$trueprediction)[2]` times. That means only `r (table(game.results2$trueprediction)[2]/500) * 100`% of the time you'll be able to guess the drop card in the first round. 
+
+**Finally, what is the probability of success using the method of picking a random number to successfully guess the dead drop?**
+
+Out of 500 games, using the method of picking a random number successfully guessed the drop `r table(game.results2$randompredicted)[2]` times, or `r (table(game.results2$randompredicted)[2]/500) * 100`% of the time. As you can see from the 500 simulations of a three-player game, there's a difference with knowing one extra card at the beginning of the game.
+
+```{r echo=FALSE}
+
+simulation2.outcome <- matrix(c(table(game.results2$trueprediction),table(game.results2$randompredicted)),ncol=2,byrow = T)
+colnames(simulation2.outcome) <- c("Failed","Succeeded")
+rownames(simulation2.outcome) <- c("Probability Prediction","Random Prediction")
+
+kable(simulation2.outcome, caption="Success of Methods in Predicting the Drop")
+
+```
+
+But is it statistically significant?
+
+```{r echo=FALSE}
+
+simulation2.test <- chisq.test(simulation2.outcome, correct=F)
+test.statistic2 <- as.numeric(simulation2.test$statistic)
+
+```
+
+This time, our test statistic is `r test.statistic2`. The degrees of freedom and $\alpha$ level remain the same from above, and if you recall the table value was 3.841. So our test statistic is larger than the table value! What about our p-value?
+
+```{r}
+1-pchisq(test.statistic2,df=1)
+```
+
+With a small p-value, it appears there is a statistically significant difference with 95% confidence in using probability vs. random number prediction.
+
+### Conclusions
+
+The sample size in my original post may have been a little small, but after increasing the sample size to 500, I still reached the same conclusions (after a little testing to be sure).
+
+However, in a two-player game, where the players have access to one additional card, successfully guessing the drop with conditional probability was a little more likely than using a random number to predict it.
+
+So go nuts, and impress your friends 20% of the time. But remember, the whole point is gathering more intelligence and updating your assumptions. Oh, and having fun.
